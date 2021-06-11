@@ -18,6 +18,29 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 PATH = "../datasets/"
 
 
+def toy_example(size=1000, dim=2, cluster=10):
+    Xs = 0.5 * np.random.randn(size, dim)
+    mus = 2 * np.random.random((cluster, dim))
+    sigmas = 0.5 * np.random.random((cluster,dim,dim))
+    for i in range(len(sigmas)):
+        sigmas[i, :, :] = 0.1 * sigmas[i, :, :].transpose().dot(sigmas[i, :, :])
+        sigmas[i,:,:][np.diag_indices_from(sigmas[i,:,:])] *= 10
+
+    mults = []
+    for i in range(cluster):
+        mults.append(np.random.multivariate_normal(mus[i], sigmas[i, :, :], size))
+    mults = np.stack(mults, -1)
+    espilon = np.random.choice(cluster, size)
+
+    Xt = mults[np.arange(size), :, espilon]
+
+    def f(X):
+        return (1/2) * (X[:, 0] + 0.5 * X[:, 1]) + np.exp(X[:, 0] * X[:, 1] - X[:, 1]**2 - 0.25 * X[:, 0]**2)
+
+    return Xs, Xt, f
+
+
+
 def download_superconductivity(path=PATH):
     urllib.request.urlretrieve("https://archive.ics.uci.edu/ml/machine-learning-databases/00464/superconduct.zip",
                                path + "superconductivity.zip")
@@ -35,7 +58,7 @@ def load_office(domain, path=PATH):
 
 
 def load_digits(domain, path=PATH):
-    path = path + "digits_preprocessed/" + domain
+    path = path + "digits/" + domain
     X = np.load(path+'_X.npy')
     y = np.load(path+'_y.npy')
     return X, y
@@ -86,9 +109,11 @@ def _superconductivity_domain(data, cuts, split_col, i):
                            & (data[:, split_col] > cuts[i-1])).ravel()
 
 
-def preprocessing_office(X, y):
-
-    y_enc = OneHotEncoder(sparse=False).fit_transform(y.reshape(-1, 1))
+def preprocessing_office(Xs, ys, Xt, yt):
+    
+    ohe = OneHotEncoder(sparse=False).fit(ys.reshape(-1, 1))
+    ys_enc = ohe.transform(ys.reshape(-1, 1))
+    yt_enc = ohe.transform(yt.reshape(-1, 1))
     
     def convert_y(y_pred):
         new_pred = np.zeros(y_pred.shape)
@@ -96,12 +121,14 @@ def preprocessing_office(X, y):
         new_pred[np.arange(len(new_pred)), args] = 1.
         return new_pred
     
-    return X, y_enc, convert_y
+    return Xs, ys_enc, Xt, yt_enc, convert_y
 
 
-def preprocessing_digits(X, y):
+def preprocessing_digits(Xs, ys, Xt, yt):
     
-    y_enc = OneHotEncoder(sparse=False).fit_transform(y.reshape(-1, 1))
+    ohe = OneHotEncoder(sparse=False).fit(ys.reshape(-1, 1))
+    ys_enc = ohe.transform(ys.reshape(-1, 1))
+    yt_enc = ohe.transform(yt.reshape(-1, 1))
     
     def convert_y(y_pred):
         new_pred = np.zeros(y_pred.shape)
@@ -109,21 +136,24 @@ def preprocessing_digits(X, y):
         new_pred[np.arange(len(new_pred)), args] = 1.
         return new_pred
     
-    return X, y_enc, convert_y
+    return Xs, ys_enc, Xt, yt_enc, convert_y
 
 
-def preprocessing_superconductivity(X, y, src_index):
-    X[:, 80:] = X[:, 80:] / (X[src_index, 80:].max(0) + 1.e-8)
+def preprocessing_superconductivity(Xs, ys, Xt, yt):
+    maxes = Xs[:, 80:].max(0)
+    Xs[:, 80:] = Xs[:, 80:] / (maxes + 1.e-8)
+    Xt[:, 80:] = Xt[:, 80:] / (maxes + 1.e-8)
     std_sc = StandardScaler()
-    std_sc.fit(X[src_index, :80])
-    X[:, :80] = std_sc.transform(X[:, :80])
+    std_sc.fit(Xs[:, :80])
+    Xs[:, :80] = std_sc.transform(Xs[:, :80])
+    Xt[:, :80] = std_sc.transform(Xt[:, :80])
 
-    y_log = np.log(y + 1)
-    mu = np.mean(y_log[src_index])
-    std = np.std(y_log[src_index])
-    y = (y_log - mu) / std
+    mu = np.mean(ys)
+    std = np.std(ys)
+    ys = (ys - mu) / std
+    yt = (yt - mu) / std
 
     def convert_y(y_pred):
-        return np.exp(std * y_pred + mu) - 1
+        return std * y_pred + mu
     
-    return X, y, convert_y
+    return Xs, ys, Xt, yt, convert_y

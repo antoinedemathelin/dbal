@@ -1,3 +1,4 @@
 *.ipynb_checkpoints
 __pycache__
-datasets/digits_preprocessed
+datasets/digits
+datasets/superconductivity
