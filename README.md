@@ -1,5 +1,7 @@
 # Discrepancy-Based Active Learning for Domain Adaptation
 
+This repository provides an implementation of [Discrepancy-Based Active Learning for Domain Adaptation](https://arxiv.org/abs/2103.03757)
+
 ## Requirements
 
 The following packages are required to run the experiments:
