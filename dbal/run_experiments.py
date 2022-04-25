@@ -21,6 +21,8 @@ from tensorflow.keras.constraints import MinMaxNorm
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.models import load_model
 
+from adapt.instance_based import TrAdaBoostR2
+
 from query_methods import *
 from training_models import *
 from utils import *
@@ -83,32 +85,40 @@ def run_superconductivity_k20():
 
                     Xs, ys, Xt, yt, convert_y = preprocessing_superconductivity(Xs, ys, Xt, yt)
 
-                    print("qbc...")
-                    qbc_model = QBC(get_base_model)
-                    qbc_model.fit(Xs, ys, **fit_params)
-                    Xt_emb = qbc_model.embeddings(Xt)
-                    Xs_emb = qbc_model.embeddings(Xs)
+                    # Train ensemble of model for qbc
+                    print("ensemble...")
+                    models = [get_base_model() for _ in range(1)]
+                    for mod in models:
+                        index_boot = np.random.choice(len(Xs), size=len(Xs), replace=True)
+                        mod.fit(Xs[index_boot], ys[index_boot], **fit_params)
+
+                    Xs_emb = K.function([mod.layers[0].input],
+                               [mod.get_layer(index=-2).output])(Xs)[0]
+                    Xt_emb = K.function([mod.layers[0].input],
+                               [mod.get_layer(index=-2).output])(Xt)[0]
 
                     print("random...")
                     random = RandomQuery()
-                    random.fit(Xt, Xs, ys, max_queries)
+                    random.fit(Xt_emb, Xs_emb, ys, max_queries)
                     print("kmeans...")
                     kmeans = KMeansQuery()
-                    kmeans.fit(Xt, Xs, ys, max_queries)
+                    kmeans.fit(Xt_emb, Xs_emb, ys, max_queries)
                     print("diversity...")
                     divers = DiversityQuery()
-                    divers.fit(Xt, Xs, ys, max_queries)
+                    divers.fit(Xt_emb, Xs_emb, ys, max_queries)
+                    print("qbc...")
+                    yt_preds = [mod.predict(Xt) for mod in models]
                     qbc = OrderedQuery()
-                    qbc.fit(Xt, Xs, ys, max_queries, sample_weight=qbc_model.uncertainties(Xt))
+                    qbc.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=qbc_uncertainties(yt_preds))
                     print("kcenters...")
                     kcenters = KCentersQuery()
                     kcenters.fit(Xt_emb, Xs_emb, ys, max_queries)
                     print("kmedoids...")
                     kmedoids = KMedoidsQuery()
-                    kmedoids.fit(Xt, Xs, ys, max_queries)
+                    kmedoids.fit(Xt_emb, Xs_emb, ys, max_queries)
 
                     for n_queries in n_queries_list:
-                        for q_method, q_name in zip([random, kmeans, divers, qbc, kcenters, kmedoids],
+                        for q_method, q_name in zip([random, kmeans, divers, qbc, kcenters, kmedoids], 
                                                     ["random", "kmeans", "divers", "qbc", "kcenters", "kmedoids"]):
                             queries = q_method.predict(n_queries)
                             test_index = np.array(list(set(np.arange(len(Xt))) - set(queries)))
@@ -177,7 +187,7 @@ def run_superconductivity_s2t3():
                 t_method=[],
                 score=[])
 
-    for random_state in range(1):
+    for random_state in range(8):
         np.random.seed(random_state)
         tf.random.set_seed(random_state)
         for source in source_list:
@@ -196,43 +206,51 @@ def run_superconductivity_s2t3():
                         yt = yt[index_]
 
                     Xs, ys, Xt, yt, convert_y = preprocessing_superconductivity(Xs, ys, Xt, yt)
+                    
+                    # Train ensemble of model for qbc
+                    print("ensemble...")
+                    models = [get_base_model() for _ in range(1)]
+                    for mod in models:
+                        index_boot = np.random.choice(len(Xs), size=len(Xs), replace=True)
+                        mod.fit(Xs[index_boot], ys[index_boot], **fit_params)
 
-                    print("qbc...")
-                    qbc_model = QBC(get_base_model)
-                    qbc_model.fit(Xs, ys, **fit_params)
-                    Xt_emb = qbc_model.embeddings(Xt)
-                    Xs_emb = qbc_model.embeddings(Xs)
+                    Xs_emb = K.function([mod.layers[0].input],
+                               [mod.get_layer(index=-2).output])(Xs)[0]
+                    Xt_emb = K.function([mod.layers[0].input],
+                               [mod.get_layer(index=-2).output])(Xt)[0]
 
                     print("random...")
                     random = RandomQuery()
-                    random.fit(Xt, Xs, ys, max_queries)
+                    random.fit(Xt_emb, Xs_emb, ys, max_queries)
                     print("kmeans...")
                     kmeans = KMeansQuery()
-                    kmeans.fit(Xt, Xs, ys, max_queries)
+                    kmeans.fit(Xt_emb, Xs_emb, ys, max_queries)
                     print("diversity...")
                     divers = DiversityQuery()
-                    divers.fit(Xt, Xs, ys, max_queries)
+                    divers.fit(Xt_emb, Xs_emb, ys, max_queries)
+                    print("qbc...")
+                    yt_preds = [mod.predict(Xt) for mod in models]
                     qbc = OrderedQuery()
-                    qbc.fit(Xt, Xs, ys, max_queries, sample_weight=qbc_model.uncertainties(Xt))
+                    qbc.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=qbc_uncertainties(yt_preds))
                     print("kcenters...")
                     kcenters = KCentersQuery()
                     kcenters.fit(Xt_emb, Xs_emb, ys, max_queries)
                     print("kmedoids...")
                     kmedoids = KMedoidsQuery()
-                    kmedoids.fit(Xt, Xs, ys, max_queries)
+                    kmedoids.fit(Xt_emb, Xs_emb, ys, max_queries)
 
                     for n_queries in n_queries_list:
-                        for q_method, q_name in zip([random, kmeans, divers, qbc, kcenters, kmedoids],
+                        for q_method, q_name in zip([random, kmeans, divers, qbc, kcenters, kmedoids], 
                                                     ["random", "kmeans", "divers", "qbc", "kcenters", "kmedoids"]):
                             queries = q_method.predict(n_queries)
                             test_index = np.array(list(set(np.arange(len(Xt))) - set(queries)))
                             for t_method in training_list:
                                 if t_method.__name__ == "TrAdaBoostR2":
-                                    model = t_method(get_base_model, input_shape=Xs.shape[1:])
-                                    model.fit(X=np.concatenate((Xs, Xt[queries])),
-                                              y=np.concatenate((ys, yt[queries])),
-                                              src_index=np.arange(len(Xs)),
-                                              tgt_index=np.arange(len(Xs), len(Xs)+len(queries)),
+                                    model = t_method(get_base_model(input_shape=Xs.shape[1:]))
+                                    model.fit(Xs=Xs,
+                                              ys=ys,
+                                              Xt=Xt[queries],
+                                              yt=yt[queries],
                                               **fit_params)
                                 else:
                                     model = t_method(get_base_model)
@@ -267,7 +285,7 @@ def run_office():
                         kernel_constraint=MinMaxNorm(0, C),
                         bias_constraint=MinMaxNorm(0, C))(modeled)
         model = Model(inputs, modeled)
-        model.compile(optimizer=Adam(0.001), loss='categorical_crossentropy', metrics=["accuracy"])
+        model.compile(optimizer=Adam(0.001), loss='categorical_crossentropy')
         return model
 
     fit_params = dict(epochs=60, batch_size=128, verbose=0)
@@ -303,33 +321,44 @@ def run_office():
 
         Xs, ys, Xt, yt, convert_y = preprocessing_office(Xs, ys, Xt, yt)
 
-        print("bvsb...")
-        bvsb_model = BVSB(get_base_model)
-        bvsb_model.fit(Xs, ys, **fit_params)
-        Xt_emb = bvsb_model.embeddings(Xt)
-        Xs_emb = bvsb_model.embeddings(Xs)
+        print("src_only...")
+        src_only = get_base_model()
+        src_only.fit(Xs, ys, **fit_params);
+
+        Xs_emb = K.function([src_only.layers[0].input],
+                   [src_only.get_layer(index=-2).output])(Xs)[0]
+        Xt_emb = K.function([src_only.layers[0].input],
+                   [src_only.get_layer(index=-2).output])(Xt)[0]
+        
+        yt_pred = src_only.predict(Xt)
 
         print("random...")
         random = RandomQuery()
-        random.fit(Xt, Xs, ys, max_queries)
+        random.fit(Xt_emb, Xs_emb, ys, max_queries)
         print("kmeans...")
         kmeans = KMeansQuery()
-        kmeans.fit(Xt, Xs, ys, max_queries)
+        kmeans.fit(Xt_emb, Xs_emb, ys, max_queries)
         print("diversity...")
         divers = DiversityQuery()
-        divers.fit(Xt, Xs, ys, max_queries)
+        divers.fit(Xt_emb, Xs_emb, ys, max_queries)
+        print("bvsb...")
         bvsb = OrderedQuery()
-        bvsb.fit(Xt, Xs, ys, max_queries, sample_weight=bvsb_model.uncertainties(Xt))
+        bvsb.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=bvsb_uncertainties(yt_pred))
         print("kcenters...")
         kcenters = KCentersQuery()
         kcenters.fit(Xt_emb, Xs_emb, ys, max_queries)
+        print("clue...")
+        uncertainties = yt_pred * np.log(yt_pred + 1e-6)
+        uncertainties = -np.sum(uncertainties, axis=1).ravel()
+        clue = KMeansQuery()
+        clue.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=uncertainties)
         print("kmedoids...")
         kmedoids = KMedoidsQuery()
-        kmedoids.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=bvsb_model.uncertainties(Xt))
+        kmedoids.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=bvsb_uncertainties(yt_pred))
 
         for n_queries in n_queries_list:
-            for q_method, q_name in zip([random, kmeans, divers, bvsb, kcenters, kmedoids],
-                                        ["random", "kmeans", "divers", "bvsb", "kcenters", "kmedoids"]):
+            for q_method, q_name in zip([random, kmeans, divers, bvsb, kcenters, clue, kmedoids],
+                                        ["random", "kmeans", "divers", "bvsb", "kcenters", "clue", "kmedoids"]):
                 queries = q_method.predict(n_queries)
                 test_index = np.array(list(set(np.arange(len(Xt))) - set(queries)))
                 for t_method in training_list:
@@ -365,7 +394,7 @@ def run_digits():
                         kernel_constraint=MinMaxNorm(0, C),
                         bias_constraint=MinMaxNorm(0, C))(modeled)
         model = Model(inputs, modeled)
-        model.compile(optimizer=Adam(0.001), loss='categorical_crossentropy', metrics=["accuracy"])
+        model.compile(optimizer=Adam(0.001), loss='categorical_crossentropy')
         return model
 
     fit_params = dict(epochs=30, batch_size=128, verbose=0)
@@ -410,39 +439,50 @@ def run_digits():
 
             Xs, ys, Xt, yt, convert_y = preprocessing_digits(Xs, ys, Xt, yt)
 
-            print("bvsb...")
-            bvsb_model = BVSB(get_base_model)
-            bvsb_model.fit(Xs, ys, **fit_params)
-            Xt_emb = bvsb_model.embeddings(Xt)
-            Xs_emb = bvsb_model.embeddings(Xs)
+            print("src_only...")
+            src_only = get_base_model()
+            src_only.fit(Xs, ys, **fit_params);
+
+            Xs_emb = K.function([src_only.layers[0].input],
+                       [src_only.get_layer(index=-2).output])(Xs)[0]
+            Xt_emb = K.function([src_only.layers[0].input],
+                       [src_only.get_layer(index=-2).output])(Xt)[0]
+            
+            yt_pred = src_only.predict(Xt)
 
             print("random...")
             random = RandomQuery()
-            random.fit(Xt, Xs, ys, max_queries)
+            random.fit(Xt_emb, Xs_emb, ys, max_queries)
             print("kmeans...")
             kmeans = KMeansQuery(minibatch=True)
-            kmeans.fit(Xt, Xs, ys, max_queries)
+            kmeans.fit(Xt_emb, Xs_emb, ys, max_queries)
             print("diversity...")
             divers = DiversityQuery()
             sub_index = np.random.choice(len(Xs), 1000, replace=False)
-            divers.fit(Xt, Xs[sub_index], ys[sub_index], max_queries)
+            divers.fit(Xt_emb, Xs_emb[sub_index], ys[sub_index], max_queries)
+            print("bvsb...")
             bvsb = OrderedQuery()
-            bvsb.fit(Xt, Xs, ys, max_queries, sample_weight=bvsb_model.uncertainties(Xt))
+            bvsb.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=bvsb_uncertainties(yt_pred))
+            print("clue...")
+            uncertainties = yt_pred * np.log(yt_pred + 1e-6)
+            uncertainties = -np.sum(uncertainties, axis=1).ravel()
+            clue = KMeansQuery(minibatch=True)
+            clue.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=uncertainties)
             print("kcenters...")
             kcenters = KCentersQuery(nn_algorithm="kdt-forest", n_trees=50)
             kcenters.fit(Xt_emb, Xs_emb, ys, max_queries)
             print("kmedoids...")
             kmedoids = KMedoidsAccelerated(nn_algorithm="kdt-forest", n_trees=50, batch_size_init=5000)
-            kmedoids.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=bvsb_model.uncertainties(Xt))
+            kmedoids.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=bvsb_uncertainties(yt_pred))
             print("aada...")
             y_disc = discriminator.predict(Xt).ravel()
             y_task = task.predict(Xt)
             aada = OrderedQuery()
-            aada.fit(Xt, Xs, ys, max_queries, sample_weight=AADA(y_task, y_disc).uncertainties(Xt))
+            aada.fit(Xt_emb, Xs_emb, ys, max_queries, sample_weight=aada_uncertainties(y_task, y_disc))
 
             for n_queries in n_queries_list:
-                for q_method, q_name in zip([random, kmeans, divers, bvsb, kcenters, kmedoids, aada],
-                                        ["random", "kmeans", "divers", "bvsb", "kcenters", "kmedoids", "aada"]):
+                for q_method, q_name in zip([random, kmeans, divers, bvsb, clue, kcenters, kmedoids, aada],
+                                        ["random", "kmeans", "divers", "bvsb", "clue", "kcenters", "kmedoids", "aada"]):
                     queries = q_method.predict(n_queries)
                     test_index = np.array(list(set(np.arange(len(Xt))) - set(queries)))
                     for t_method in training_list:

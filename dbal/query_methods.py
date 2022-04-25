@@ -8,8 +8,38 @@ import numpy as np
 from sklearn.metrics.pairwise import manhattan_distances
 from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import KMeans, MiniBatchKMeans
-from kmedoids import KDTreeForest
+from kdtrees import KDTreeForest
 import tensorflow.keras.backend as K
+
+
+def qbc_uncertainties(y_preds):
+    predictions = np.stack(y_preds, axis=-1)
+    uncertainties = np.std(predictions, axis=-1).ravel()
+    return uncertainties
+
+
+def aada_uncertainties(y_pred, y_disc):
+    if len(y_pred.shape) == 1 or y_pred.shape[1] == 1:
+        y_pred = y_pred.ravel()
+        uncertainties = -((1-y_pred) * np.log(1-y_pred + 1e-6) +
+                       y_pred * np.log(y_pred + 1e-6))
+    else:
+        uncertainties = y_pred * np.log(y_pred + 1e-6)
+        uncertainties = -np.sum(uncertainties, axis=1).ravel()
+
+    importance = y_disc/(1-y_disc + 1e-6)
+    return importance * uncertainties
+
+
+def bvsb_uncertainties(y_pred):
+    if len(y_pred.shape) == 1 or y_pred.shape[1] == 1:
+        y_pred = y_pred.ravel()
+        uncertainties = 0.5 - np.abs(0.5 - y_pred)
+    else:
+        sorted_pred = np.sort(y_pred, axis=1)
+        uncertainties = 1 - (sorted_pred[:, -1] - sorted_pred[:, -2])
+        uncertainties = uncertainties.ravel()
+    return uncertainties
 
 
 class BaseQuery:
@@ -21,9 +51,6 @@ class BaseQuery:
 
     def fit(self, Xt, Xs=None, ys=None, n_queries=None,
             sample_weight=None):
-        
-        if sample_weight is not None:
-            sample_weight = sample_weight.reshape((len(sample_weight,),))
         
         self.Xt_ = Xt
         self.Xs_ = Xs
@@ -332,7 +359,7 @@ class KMedoidsQuery(BaseQuery):
 
     def _fit(self, Xt, Xs, ys, n_queries, sample_weight):
         if Xs is None:
-            deltas_src = np.full((len(Xt),), np.inf)
+            deltas = np.full((len(Xt),), np.inf)
         else:
             if self.nn_algorithm == "brute":
                 distance_matrix_src = self.distance(Xt, Xs)
@@ -349,14 +376,14 @@ class KMedoidsQuery(BaseQuery):
         self.queries = []
         
         for i in range(n_queries):
-            deltas = np.min(np.stack(
+            self.deltas = np.min(np.stack(
                 [deltas_src] + [distance_matrix_tgt[i] for i in self.queries],
                 axis=1), axis=1)
-            deltas_matrix = np.resize(deltas, distance_matrix_tgt.shape)
+            deltas_matrix = np.resize(self.deltas, distance_matrix_tgt.shape)
             diff_matrix = np.clip(deltas_matrix - distance_matrix_tgt, a_min=0., a_max=None)
             self.queries.append(diff_matrix.dot(sample_weight.reshape(-1, 1)).ravel().argmax())
             
-        deltas = np.min(np.stack(
+        self.deltas = np.min(np.stack(
                 [deltas_src] + [distance_matrix_tgt[i] for i in self.queries],
                 axis=1), axis=1)
         return self
@@ -369,9 +396,8 @@ class KMeansQuery(BaseQuery):
         super().__init__()
     
     def _predict(self, Xt, Xs, ys, n_queries, sample_weight):
-        if sample_weight is None:
-            sample_weight = np.ones(len(Xt))
-        sample_weight /= np.sum(sample_weight)
+        if sample_weight is not None:
+            sample_weight /= np.sum(sample_weight)
         if self.minibatch:
             kmeans = MiniBatchKMeans(n_clusters=n_queries)
         else:
@@ -408,6 +434,8 @@ class KCentersQuery(BaseQuery):
     
     
     def _fit(self, Xt, Xs, ys, n_queries, sample_weight):
+        if sample_weight is not None:
+            sample_weight /= sample_weight.sum()
         if Xs is None:
             deltas = np.full((len(Xt),), np.inf)
         else:
@@ -423,7 +451,10 @@ class KCentersQuery(BaseQuery):
         
         self.queries = []
         for i in range(n_queries):
-            argmax = deltas.argmax()
+            if sample_weight is None:
+                argmax = deltas.argmax()
+            else:
+                argmax = (deltas * sample_weight).argmax()
             self.queries.append(argmax)
             deltas_tgt = self.distance(Xt,
                                        Xt[[argmax]])
@@ -475,7 +506,7 @@ class AADA:
         else:
             y_pred = self.y_pred
             uncertainties = y_pred * np.log(y_pred + 1e-6)
-            uncertainties = -np.sum(confidence, axis=1)
+            uncertainties = -np.sum(uncertainties, axis=1).ravel()
         
         importance = self.y_disc/(1-self.y_disc + 1e-6)
         return importance * uncertainties
@@ -501,7 +532,7 @@ class BVSB:
         else:
             sorted_pred = np.sort(y_pred, axis=1)
             uncertainties = 1 - (sorted_pred[:, -1] - sorted_pred[:, -2])
-            uncertainties = uncertainties
+            uncertainties = uncertainties.ravel()
         return uncertainties
         
     def embeddings(self, X, layer=-2):
@@ -531,12 +562,12 @@ class QBC:
         return self
     
     def predict(self, X):
-        predictions = np.stack([model.predict_on_batch(X).numpy() for model in self.models], axis=-1)
+        predictions = np.stack([model.predict(X) for model in self.models], axis=-1)
         return np.mean(predictions, axis=-1)
     
     def uncertainties(self, X):
-        predictions = np.stack([model.predict_on_batch(X).numpy() for model in self.models], axis=-1)
-        uncertainties = np.std(predictions, axis=-1)
+        predictions = np.stack([model.predict(X) for model in self.models], axis=-1)
+        uncertainties = np.std(predictions, axis=-1).ravel()
         return uncertainties
         
     def embeddings(self, X, layer=-2):

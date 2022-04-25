@@ -1,7 +1,5 @@
 # Discrepancy-Based Active Learning for Domain Adaptation
 
-This repository provides an implementation of [Discrepancy-Based Active Learning for Domain Adaptation](https://arxiv.org/abs/2103.03757)
-
 ## Requirements
 
 The following packages are required to run the experiments:
@@ -13,6 +11,7 @@ The following packages are required to run the experiments:
 - `matplotlib` (for visualization)
 
 Besides, the [`adapt`](https://github.com/antoinedemathelin/adapt) package has been used for TrAdaBoost and DANN
+
 
 ## Example
 
@@ -91,13 +90,13 @@ Quick results can be obtained in the `notebooks` folder:
 
 ### Superconductivity 
 
-[![name](images/superconductivity.png)](https://github.com/antoinedemathelin/dbal/blob/master/notebooks/Superconductivity.ipynb)
+[![name](images/superconductivity.png)](https://github.com/AnonymousAccount0/dbal/blob/master/notebooks/Superconductivity.ipynb)
 
 ### Office
 
-[![name](images/office.png)](https://github.com/antoinedemathelin/dbal/blob/master/notebooks/Office.ipynb)
+[![name](images/office.png)](https://github.com/AnonymousAccount0/dbal/blob/master/notebooks/Office.ipynb)
 
 ### Digits
 
-[![name](images/digits.png)](https://github.com/antoinedemathelin/dbal/blob/master/notebooks/Digits.ipynb)
+[![name](images/digits.png)](https://github.com/AnonymousAccount0/dbal/blob/master/notebooks/Digits.ipynb)
 
