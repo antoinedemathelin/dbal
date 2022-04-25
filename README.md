@@ -28,24 +28,6 @@ yt = f(Xt)
 
 <img src="images/toy_example.png" width="1200px" height="325px">
 
-A model fitted on source labeled data already returns reasonable predictions on the target domain but can be improved with additional target labels.
-
-```python
-from sklearn.neural_network import MLPRegressor
-from sklearn.metrics import mean_absolute_error
-
-np.random.seed(0)
-model = MLPRegressor()
-model.fit(Xs, ys)
-y_pred = model.predict(X)
-score = mean_absolute_error(yt, model.predict(Xt))
-print("Target MAE = %.3f"%score)
-
->>> Target MAE = 0.122
-```
-
-<img src="images/toy_example_2.png" width="1200px" height="325px">
-
 
 Given a budget of 10 queries, the labels selection can be optimized using the K-medoids algorithm:
 
